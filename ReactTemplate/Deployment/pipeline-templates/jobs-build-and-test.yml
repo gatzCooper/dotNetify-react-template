@@ -1,0 +1,79 @@
+parameters:
+  - name: "artifactName"
+    type: "string"
+
+  - name: "projectPath"
+    type: "string"
+
+  - name: "testProjectPath"
+    type: "string"
+
+  # OPTIONAL
+  # a list of jobs that this job is dependent on
+  # The default is no dependency: []
+  - name: dependsOn
+    type: object
+    default: []
+
+jobs:
+  - job: build_test_artifact
+    displayName: 'Build and Test artifact "${{parameters.artifactName}}"'
+    dependsOn: ${{ parameters.dependsOn }}
+    pool:
+      name: "Azure Pipelines"
+      vmImage: "windows-latest"
+    steps:
+      - task: UseDotNet@2
+        displayName: "Install .NET SDK 6.0.x"
+        inputs:
+          packageType: "sdk"
+          version: "6.0.x"
+
+      - task: DotNetCoreCLI@2
+        displayName: "Restore .NET Packages for ${{parameters.projectPath}}"
+        inputs:
+          command: restore
+          projects: "$(Build.SourcesDirectory)/${{parameters.projectPath}}"
+          includeNuGetOrg: true
+
+      - task: DotNetCoreCLI@2
+        displayName: "Compile Sources for ${{parameters.projectPath}}"
+        inputs:
+          command: "build"
+          projects: "$(Build.SourcesDirectory)/${{parameters.projectPath}}"
+          arguments: "--configuration Release"
+
+      - script: 'dotnet test -l:trx -c Release --collect:"XPlat Code Coverage" --settings=$(Build.SourcesDirectory)/IRG.AzureDevOpsGovernor.Mirroring/tests/CodeCoverage.runsettings $(Build.SourcesDirectory)/${{parameters.testProjectPath}}'
+        displayName: "Execute unit tests for ${{parameters.testProjectPath}}"
+        continueOnError: false
+
+      - task: CopyFiles@2
+        inputs:
+          sourceFolder: "$(Build.SourcesDirectory)"
+          contents: "$(Build.SourcesDirectory)/**/coverage.cobertura.xml"
+          targetFolder: "$(Build.ArtifactStagingDirectory)/cobertura/"
+
+      - task: CopyFiles@2
+        inputs:
+          sourceFolder: "$(Build.SourcesDirectory)"
+          contents: "$(Build.SourcesDirectory)/**/**.trx"
+          targetFolder: "$(Build.ArtifactStagingDirectory)/cobertura/"
+
+      - task: PublishBuildArtifacts@1
+        inputs:
+          pathToPublish: "$(Build.ArtifactStagingDirectory)/cobertura/"
+          artifactName: cobertura
+
+      - task: DotNetCoreCLI@2
+        displayName: "Publish the project (to temp folder)"
+        inputs:
+          command: "publish"
+          projects: "$(Build.SourcesDirectory)/${{parameters.projectPath}}"
+          arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/${{parameters.artifactName}}"
+          publishWebProjects: false
+
+      - task: PublishPipelineArtifact@0
+        displayName: "Publish temp folder as pipeline artifact ${{parameters.artifactName}}"
+        inputs:
+          artifactName: "${{parameters.artifactName}}"
+          targetPath: "$(Build.ArtifactStagingDirectory)/${{parameters.artifactName}}"

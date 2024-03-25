@@ -1,0 +1,52 @@
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: P02516-Templates
+      ref: refs/heads/master
+
+trigger:
+  - none
+
+parameters:
+  - name: replaceWebApp
+    type: boolean
+    default: false
+
+stages:
+  - stage: build
+    displayName: Build
+    jobs:
+      - template: pipeline-templates/jobs-build-and-test.yml
+        parameters:
+          artifactName: "Functions"
+          projectPath: "**/src/**/Functions.csproj"
+          testProjectPath: "IRG.AzureDevOpsGovernor.Mirroring/tests/Functions.UnitTests/Functions.UnitTests.csproj"
+
+      - template: pipeline-templates/jobs/Checkmarx.yml@templates
+        parameters:
+          projectName: "Checkmark-Scan-AzdoGov-Mirroring"
+          checkmarxService: "P02516-Checkmarx-SVC"
+          folderExclusion: "**/*Tests, **/*Test"
+
+  - template: pipeline-templates/stage-deploy.yml
+    parameters:
+      environments:
+        - {
+            name: "Dev",
+            dependsOn: build,
+            runOnProdBranch: false,
+            keyvaultName: "SmartFleetKv-NONPROD",
+          }
+        - {
+            name: "Test",
+            dependsOn: build,
+            runOnProdBranch: true,
+            keyvaultName: "SmartFleetKv-NONPROD",
+          }
+        - {
+            name: "Prod",
+            dependsOn: deploy_test,
+            runOnProdBranch: true,
+            keyvaultName: "SmartFleetKvNONPROD",
+          }

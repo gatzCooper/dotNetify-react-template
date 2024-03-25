@@ -1,0 +1,57 @@
+parameters:
+  - name: environments
+    type: object
+
+  - name: productionBranches
+    type: object
+    default:
+      - master
+      - release
+stages:
+  - ${{ each environment in parameters.environments }}:
+      - stage: "deploy_${{ lower(environment.name) }}"
+        displayName: "Deploy ${{ upper(environment.name) }}"
+        dependsOn: "${{ environment.dependsOn }}"
+        condition: |
+          and(
+            succeeded(),
+            or(
+              and(
+                eq('${{ environment.runOnProdBranch }}', 'true'),
+                ${{ containsValue( parameters.productionBranches, split(variables['Build.SourceBranch'], '/')[2] ) }}
+              ),
+              and( 
+                eq('${{ environment.runOnProdBranch }}', 'false'),
+                ${{ not(containsValue( parameters.productionBranches, split(variables['Build.SourceBranch'], '/')[2] ) ) }}
+              )
+            )
+          )
+        variables:
+          - name: "azurePipelineEnvironment"
+            value: "P02516-AzdoGovernorMirroring-${{ environment.name }}"
+
+          - name: "azureServiceConnection"
+            ${{ if eq(lower(environment.name), 'prod') }}:
+              value: "P02516-svc-azureDevOpsGovern-prod"
+            ${{ else }}:
+              value: "P02516-svc-azureDevOpsGovern-nonprod"
+
+          - name: environmentName
+            value: ${{ lower(environment.name) }}
+
+          - name: "keyvaultServiceConnection"
+            ${{ if eq(lower(environment.name), 'prod') }}:
+              value: "P02516-KeyVault-SVC-PROD"
+            ${{ else }}:
+              value: "P02516-KeyVault-SVC-NONPROD"
+
+          - name: resourceGroupName
+            value: "P02516-AzureDevOpsGovernor-Mirroring-${{ environment.name }}"
+
+          - template: jobs-deploy-webapp.yml
+            parameters:
+              artifactName: "WebApp"
+              webAppName:
+              azurePipelineEnvironment: ${{ variables.azurePipelineEnvironment }}
+              azureSubscription: ${{ variables.azureServiceConnection }}
+              dependsOn: "terraform_apply"

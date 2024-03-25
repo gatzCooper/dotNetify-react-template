@@ -1,0 +1,48 @@
+parameters:
+  - name: artifactName
+    type: string
+
+  - name: webAppName
+    type: string
+
+  - name: azurePipelineEnvironment
+    type: string
+
+  - name: azureSubscription
+    type: string
+
+  # OPTIONAL
+  # a list of stages that this stage is dependent on
+  # The default is no dependency: []
+  - name: dependsOn
+    type: object
+    default: []
+
+jobs:
+  - deployment: deploy_webapp
+    displayName: "Deploy WebApp artifact '${{ parameters.artifactName }}'"
+    dependsOn: ${{ parameters.dependsOn }}
+    timeoutInMinutes: 180
+    pool:
+      vmImage: ubuntu-latest
+    variables:
+      webAppName: ${{ parameters.webAppName }}
+    environment: ${{ parameters.azurePipelineEnvironment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - task: DownloadPipelineArtifact@0
+              displayName: "Download Artifact: ${{ parameters.artifactName }}"
+              inputs:
+                artifactName: "${{ parameters.artifactName }}"
+                targetPath: $(System.DefaultWorkingDirectory)/${{ parameters.artifactName }}
+
+            - task: AzureRmWebAppDeployment@4
+              displayName: "Deploy binaries to function app ${{ parameters.webAppName }}"
+              inputs:
+                azureSubscription: ${{ parameters.azureSubscription }}
+                appType: webApp
+                webAppName: "$(webAppName)"
+                package: "$(System.DefaultWorkingDirectory)/${{ parameters.artifactName }}/*.zip"
+                deploymentMode: runFromPack
